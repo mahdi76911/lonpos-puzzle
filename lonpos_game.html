@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lonpos — Triangle Tiling Puzzle</title>
+<style>
+  :root{
+    --fg: var(--foreground, #1a1a1a);
+    --muted: var(--muted-foreground, #666);
+    --border: var(--border, #ccc);
+    --card: var(--card, #fff);
+  }
+  *{box-sizing:border-box}
+  body{font-family: system-ui, sans-serif; color: var(--fg); margin:16px; display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start}
+  h1{font-size:20px; margin:0 0 4px}
+  .sub{color:var(--muted); font-size:13px; margin-bottom:12px; max-width:470px; line-height:1.5}
+  #board{display:grid; grid-template-columns:repeat(10,46px); grid-template-rows:repeat(10,46px); gap:2px; background:var(--card); border:2px solid var(--border); padding:6px; border-radius:8px; user-select:none}
+  .cell{width:46px;height:46px;border-radius:6px;background:#e9edf3;position:relative}
+  .cell.blocked{background:repeating-linear-gradient(45deg,#d8dde5,#d8dde5 6px,#c8cdd6 6px,#c8cdd6 12px)}
+  .cell.filled{border:2px solid rgba(0,0,0,.35); cursor:pointer}
+  .cell.preview-ok{outline:3px solid #2e7d32; outline-offset:-2px; opacity:.75}
+  .cell.preview-bad{outline:3px solid #c62828; outline-offset:-2px; opacity:.75}
+  .cell .n{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+  #tray{display:flex;flex-direction:column;gap:8px}
+  .piece{display:flex;align-items:center;gap:10px;background:var(--card);border:2px solid var(--border);border-radius:8px;padding:6px 8px;cursor:pointer}
+  .piece.sel{border-color:#1565c0; box-shadow:0 0 0 2px rgba(21,101,192,.3)}
+  .piece.used{opacity:.45; cursor:default}
+  .pgrid{display:grid; gap:1px; flex:none}
+  .pc{width:13px;height:13px;border-radius:2px}
+  .btns{display:flex;gap:4px}
+  button{font-size:13px;padding:5px 9px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--fg);cursor:pointer}
+  button:hover{border-color:#1565c0}
+  #controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+  #msg{min-height:22px;font-size:14px;font-weight:600;color:var(--muted)}
+  #msg.win{color:#2e7d32}
+  #msg.err{color:#c62828}
+  .hint{font-size:12px;color:var(--muted);max-width:260px;line-height:1.5}
+</style>
+</head>
+<body>
+<div>
+  <h1>Lonpos — tile the triangle</h1>
+  <div class="sub">10×10 board, lower-right half blocked (55 cells). Use all 12 pieces exactly once.
+  Click a piece, hover the board, click to place. R/L rotate, V/H flip. Click a placed piece to pick it up.
+  <b>Solve remaining</b> keeps your placed tiles fixed and fills the rest (empty board takes ~10 s).</div>
+  <div id="board"></div>
+  <div id="controls">
+    <button onclick="reset()">Reset</button>
+    <button onclick="loadSolution()">Load solution</button>
+    <button onclick="solveRemaining()">Solve remaining</button>
+  </div>
+  <div id="msg"></div>
+</div>
+<div>
+  <h1 style="font-size:16px">Pieces</h1>
+  <div class="hint">Each piece has a pivot (origin cell, dark border). The pivot lands where you click — offsets may reach in any direction, so the whole shape must stay inside the triangle.</div>
+  <div id="tray"></div>
+</div>
+<script>
+const N = 10;
+const PIECES = [
+  [[0,1],[0,2],[1,0],[2,0]],
+  [[0,1],[1,1],[1,0]],
+  [[0,1],[1,0]],
+  [[0,1],[0,2],[1,0],[1,2]],
+  [[0,1],[1,0],[-1,0],[0,-1]],
+  [[0,1],[0,2],[0,3],[1,0]],
+  [[0,1],[0,2],[0,3]],
+  [[0,1],[0,2],[0,3],[1,1]],
+  [[0,1],[1,1],[1,2],[1,3]],
+  [[0,1],[1,1],[1,2],[2,2]],
+  [[0,1],[1,1],[1,0],[0,2]],
+  [[0,1],[0,2],[1,0]]
+];
+const COLORS = ["#191970","#d4af37","#9932cc","#32cd32","#8b4513","#ff69b4",
+  "#00bfff","#6b8e23","#2e8b57","#d32f2f","#3f51b5","#ff4500"];
+const SOLUTION = {
+  "0": [[2,0],[[0,0],[0,1],[0,2],[1,0],[2,0]]],
+  "1": [[3,1],[[0,0],[0,1],[1,0],[1,1]]],
+  "2": [[1,0],[[-1,0],[0,0],[0,1]]],
+  "3": [[5,2],[[0,-1],[0,0],[1,0],[2,-1],[2,0]]],
+  "4": [[7,4],[[-1,0],[0,-1],[0,0],[0,1],[1,0]]],
+  "5": [[9,5],[[-1,0],[0,-3],[0,-2],[0,-1],[0,0]]],
+  "6": [[3,3],[[0,0],[1,0],[2,0],[3,0]]],
+  "7": [[5,0],[[0,0],[1,0],[1,1],[2,0],[3,0]]],
+  "8": [[9,0],[[-1,1],[-1,2],[-1,3],[0,0],[0,1]]],
+  "9": [[6,6],[[-2,-2],[-1,-2],[-1,-1],[0,-1],[0,0]]],
+  "10":[[9,7],[[-1,0],[-1,1],[0,0],[0,1],[0,2]]],
+  "11":[[7,6],[[0,0],[0,1],[1,0],[2,0]]]
+};
+const playable = (r,c) => c <= r;
+
+let board, placed, orientations, sel, msg;
+function newBoard(){
+  board = Array.from({length:N},()=>Array(N).fill(-2));
+  for(let r=0;r<N;r++) for(let c=0;c<=r;c++) board[r][c] = -1;
+  placed = Array(12).fill(null);
+  orientations = PIECES.map(p => [[0,0],...p]);
+  sel = null;
+  msg = document.getElementById('msg');
+  msg.className=''; msg.textContent='';
+  render();
+}
+const rotCw  = s => s.map(([x,y])=>[ y,-x]);
+const rotCcW = s => s.map(([x,y])=>[-y, x]);
+const vflip  = s => s.map(([x,y])=>[-x, y]);
+const hflip  = s => s.map(([x,y])=>[ x,-y]);
+
+function fits(pid, r, c){
+  const o = orientations[pid];
+  for(const [dx,dy] of o){
+    const x=r+dx, y=c+dy;
+    if(x<0||x>=N||y<0||y>=N||!playable(x,y)||board[x][y]!==-1) return false;
+  }
+  return true;
+}
+function place(pid,r,c){
+  for(const [dx,dy] of orientations[pid]) board[r+dx][c+dy] = pid;
+  placed[pid] = {r,c};
+}
+function pick(pid){
+  const {r,c} = placed[pid];
+  for(const [dx,dy] of orientations[pid]) board[r+dx][c+dy] = -1;
+  placed[pid] = null;
+}
+function coveredCount(){
+  let n=0; for(let r=0;r<N;r++) for(let c=0;c<=r;c++) if(board[r][c]!==-1) n++;
+  return n;
+}
+
+// distinct orientations of a piece from its base shape (4 rotations x flip, deduped)
+// KEY: origin cell (0,0) must stay an anchor of the shape, so dedup on the
+// actual set of offset cells — NOT on translated/normalized copies.
+function allOrientations(pid){
+  let cur = [[0,0], ...PIECES[pid]];
+  const seen = new Map();
+  for(let i=0;i<4;i++){
+    for(const s of [cur, vflip(cur)]){
+      const k = s.map(p=>p.join(',')).sort().join('|');
+      if(!seen.has(k)) seen.set(k, s);
+    }
+    cur = rotCw(cur);
+  }
+  return [...seen.values()];
+}
+
+// keep current placements fixed; backtrack the remaining pieces onto the free cells
+function solveRemaining(){
+  const t0 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
+  const occupied = new Set();
+  for(let r=0;r<N;r++) for(let c=0;c<N;c++) if(board[r][c] >= 0) occupied.add(r+','+c);
+  const unused = [];
+  for(let i=0;i<12;i++) if(!placed[i]) unused.push(i);
+  const oris = unused.map(pid => allOrientations(pid));
+  const used = new Array(12).fill(false);
+  for(let i=0;i<12;i++) if(placed[i]) used[i] = true;
+  const cells = [];
+  for(let r=0;r<N;r++) for(let c=0;c<=r;c++) cells.push([r,c]);
+  const res = { ok:false, placements:{} };
+
+  const firstEmpty = () => { for(const [r,c] of cells) if(!occupied.has(r+','+c)) return [r,c]; return null; };
+  const fitsShape = (shape, r, c) => {
+    for(const [dx,dy] of shape){
+      const x=r+dx, y=c+dy;
+      if(x<0||x>=N||y<0||y>=N||y>x||occupied.has(x+','+y)) return false;
+    }
+    return true;
+  };
+  function bt(){
+    const f = firstEmpty();
+    if(!f) return true;
+    for(let k=0;k<unused.length;k++){
+      const pid = unused[k];
+      if(used[pid]) continue;
+      for(const shape of oris[k]){
+        for(const [dx,dy] of shape){
+          const r=f[0]-dx, c=f[1]-dy;
+          if(fitsShape(shape,r,c)){
+            for(const [a,b] of shape) occupied.add((r+a)+','+(c+b));
+            res.placements[pid]=[r,c,shape];
+            used[pid] = true;
+            if(bt()) return true;
+            used[pid] = false;
+            for(const [a,b] of shape) occupied.delete((r+a)+','+(c+b));
+            delete res.placements[pid];
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  const ok = bt();
+  const dt = ((typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now()) - t0;
+  if(ok){
+    for(const pid in res.placements){
+      const [r,c,shape] = res.placements[pid];
+      orientations[pid] = shape;
+      place(+pid, r, c);
+    }
+    sel = null;
+    render();
+    msg.textContent = '✅ Solved remaining in ' + (dt/1000).toFixed(1) + ' s';
+    msg.className = 'win';
+  } else {
+    msg.textContent = '❌ No solution exists with your current placements — pick something up and try again.';
+    msg.className = 'err';
+  }
+}
+
+function render(){
+  const bd = document.getElementById('board');
+  bd.innerHTML='';
+  for(let r=0;r<N;r++) for(let c=0;c<N;c++){
+    const d = document.createElement('div');
+    d.className='cell';
+    if(!playable(r,c)){ d.classList.add('blocked'); }
+    else if(board[r][c]!==-1){
+      d.classList.add('filled');
+      d.style.background = COLORS[board[r][c]];
+      d.innerHTML = `<span class="n">${board[r][c]}</span>`;
+      d.onclick = ()=>{ if(sel===null){ pick(board[r][c]); render(); checkWin(); } };
+      d.onmouseenter = e=>previewAt(e, sel, r, c);
+      d.onmouseleave = clearPreview;
+    } else {
+      d.onmouseenter = e=>previewAt(e, sel, r, c);
+      d.onmouseleave = clearPreview;
+      d.onclick = ()=>{ if(sel!==null && fits(sel,r,c)){ place(sel,r,c); sel=null; render(); checkWin(); } };
+    }
+    d.dataset.r=r; d.dataset.c=c;
+    bd.appendChild(d);
+  }
+  const tray = document.getElementById('tray');
+  tray.innerHTML='';
+  for(let i=0;i<12;i++){
+    const row = document.createElement('div');
+    row.className='piece'+(placed[i]?' used':'')+(sel===i?' sel':'');
+    // draw mini shape: rows = x range, cols = y range
+    const g = document.createElement('div');
+    g.className='pgrid';
+    const o = orientations[i];
+    let minx=0,maxx=0,miny=0,maxy=0;
+    for(const [x,y] of o){ minx=Math.min(minx,x);maxx=Math.max(maxx,x);miny=Math.min(miny,y);maxy=Math.max(maxy,y); }
+    const rows = maxx-minx+1, cols = maxy-miny+1;
+    g.style.gridTemplateColumns = `repeat(${cols},13px)`;
+    g.style.gridTemplateRows = `repeat(${rows},13px)`;
+    const filledSet = new Set(o.map(([x,y])=>`${x-minx},${y-miny}`));
+    for(let x=minx;x<=maxx;x++) for(let y=miny;y<=maxy;y++){
+      const c = document.createElement('div'); c.className='pc';
+      if(filledSet.has(`${x-minx},${y-miny}`)){
+        c.style.background = COLORS[i];
+        if(x===0 && y===0) c.style.border = '2px solid rgba(0,0,0,.7)';
+      }
+      g.appendChild(c);
+    }
+    row.appendChild(g);
+    const bs = document.createElement('div'); bs.className='btns';
+    const mk=(label,f)=>{const b=document.createElement('button');b.textContent=label;
+      b.onclick=e=>{e.stopPropagation(); orientations[i]=f(orientations[i]); render();}; return b;};
+    bs.appendChild(mk('R',rotCw)); bs.appendChild(mk('L',rotCcW));
+    bs.appendChild(mk('V',vflip)); bs.appendChild(mk('H',hflip));
+    row.appendChild(bs);
+    if(!placed[i]) row.onclick = ()=>{ sel = (sel===i? null : i); render(); };
+    tray.appendChild(row);
+  }
+}
+function previewAt(e, pid, r, c){
+  if(pid===null) return;
+  clearPreview();
+  const ok = fits(pid, r, c);
+  for(const [dx,dy] of orientations[pid]){
+    const x=r+dx, y=c+dy;
+    if(x<0||x>=N||y<0||y>=N) continue;
+    const el = document.querySelector(`.cell[data-r="${x}"][data-c="${y}"]`);
+    if(!el) continue;
+    el.classList.add(ok?'preview-ok':'preview-bad');
+    if(ok) el.style.background = COLORS[pid];
+  }
+}
+function clearPreview(){
+  document.querySelectorAll('.cell.preview-ok,.cell.preview-bad').forEach(el=>{
+    el.classList.remove('preview-ok','preview-bad');
+    if(board[el.dataset.r][el.dataset.c]===-1) el.style.background='';
+  });
+}
+function checkWin(){
+  if(coveredCount()===55){
+    msg.textContent = '🎉 Solved! All 55 cells covered with all 12 pieces.';
+    msg.className='win';
+  }
+}
+function reset(){ sel=null; newBoard(); }
+function loadSolution(){
+  sel=null; newBoard();
+  for(const [pid,[[r,c],o]] of Object.entries(SOLUTION)){
+    orientations[+pid] = o.map(p=>[...p]);
+    place(+pid, r, c);
+  }
+  render(); checkWin();
+  msg.textContent='Solution loaded (found by lonpos_solver.py, ~13 s search).';
+  msg.className='win';
+}
+newBoard();
+</script>
+</body>
+</html>
