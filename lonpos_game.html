@@ -40,9 +40,9 @@
 <body>
 <div>
   <h1>Lonpos — tile the triangle</h1>
-  <div class="sub">10×10 board, lower-right half blocked (55 cells). Use all 12 pieces exactly once.
+  <div class="sub">10×10 board, upper-right half blocked (55 playable cells in the lower-left triangle). Use all 12 pieces exactly once.
   Click a piece, hover the board, click to place. R/L rotate, V/H flip. Click a placed piece to pick it up.
-  <b>Solve remaining</b> keeps your placed tiles fixed and fills the rest (empty board takes ~10 s).</div>
+  <b>Solve remaining</b> keeps your placed tiles fixed and fills the rest (empty board takes a few seconds).</div>
   <div id="board"></div>
   <div id="controls">
     <button onclick="reset()">Reset</button>
@@ -301,6 +301,8 @@ function loadSolution(){
   msg.className='win';
 }
 newBoard();
+// ?solution=1 in the URL starts with the solved board (handy for sharing/previewing)
+if (typeof location !== 'undefined' && location.search.includes('solution')) loadSolution();
 </script>
 </body>
 </html>
